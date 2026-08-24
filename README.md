@@ -11,6 +11,7 @@ Built-in adapters support Claude Code, OpenAI Codex, and GitHub Copilot CLI. Nam
 - Saved team profiles.
 - Custom non-interactive CLI adapters.
 - Durable handoff checkpoints for context or rate-limit interruptions.
+- Crash-safe session history across browser, app, and Mac restarts.
 - Manual in-app takeover by default; optional automatic backup.
 - Same-worktree continuation with Git status and diff recovery.
 - Isolated implementation branches and a separate integration branch.
@@ -53,6 +54,10 @@ Use **Accounts & models → Custom** for any trusted CLI that accepts a prompt n
 Agents are instructed to maintain an external handoff checkpoint containing decisions, files, commands, results, risks, remaining work, and the exact next action. If an agent fails, Relay pauses without discarding its worktree. In the dashboard you can retry the same connection after fixing its login or limits, or select a different connection. Either choice receives the checkpoint plus the current Git status and diff summary.
 
 No provider exposes a universal reliable “tokens remaining” API, so checkpoints are proactive while takeover is triggered by an agent exit, context-limit error, rate limit, authentication failure, or manual choice.
+
+## Restart and crash recovery
+
+Relay continuously saves run goals, readable messages, technical events, test history, model assignments, checkpoint paths, branches, and worktree locations under `~/.agent-relay/runs`. If the browser, Relay process, or Mac restarts, the dashboard restores the active session automatically and shows **Interrupted session preserved**. Choose **Open** to inspect everything or **Resume work** to continue from the saved worktrees. Recovery never silently edits or merges main.
 
 ## Safety
 

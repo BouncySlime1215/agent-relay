@@ -6,10 +6,18 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { connectionEnv, findConnection, publicConfig, saveConfig } from "./config.mjs";
+import { loadRunStates, saveRunState } from "./run-store.mjs";
 
 const PORT = 4317;
 const runs = new Map();
+for(const run of loadRunStates())runs.set(run.id,run);
 const dashboard = readFileSync(new URL("./dashboard.html", import.meta.url));
+const persistTimers=new Map();
+function persist(run,immediate=false){
+  if(immediate){clearTimeout(persistTimers.get(run.id));persistTimers.delete(run.id);saveRunState(run);return;}
+  if(persistTimers.has(run.id))return;
+  persistTimers.set(run.id,setTimeout(()=>{persistTimers.delete(run.id);saveRunState(run)},200));
+}
 
 function exec(bin, args, cwd, timeout = 30 * 60_000, run, onLine, env = process.env) {
   return new Promise((resolveRun, reject) => {
@@ -40,13 +48,15 @@ function emit(run, agent, text, state = "done") {
   if (agent === "Relay" || state !== "live") message(run, agent, clean, state);
   run.activity[agent] = clean;
   run.updatedAt = new Date().toISOString();
+  persist(run);
 }
 function message(run, agent, text, state = "message") {
   const clean=String(text).replace(/\s+/g," ").trim().slice(0,1200); if(!clean)return;
   const last=run.messages.at(-1); if(last?.agent===agent&&last?.text===clean)return;
   run.messages.push({at:new Date().toISOString(),agent,text:clean,state}); if(run.messages.length>120)run.messages.shift();
+  persist(run);
 }
-function activity(run, agent, text) { run.activity[agent]=String(text).replace(/\s+/g," ").trim().slice(0,180); run.updatedAt=new Date().toISOString(); }
+function activity(run, agent, text) { run.activity[agent]=String(text).replace(/\s+/g," ").trim().slice(0,180); run.updatedAt=new Date().toISOString(); persist(run); }
 function simpleError(value) {
   const text=String(value||"");
   const limit=text.match(/You've hit your session limit[^"\n}]*/i); if(limit)return limit[0].replace(/\\_/g,"_");
@@ -99,6 +109,45 @@ function taskText(value){if(typeof value==="string")return value;if(value==null)
 async function makeWorktree(repo, root, name, base) { const path = join(root, name); await git(repo, "worktree", "add", "-b", `relay/${name}`, path, base); return path; }
 async function commitIfNeeded(path, message) { if (!(await git(path, "status", "--porcelain"))) return false; await git(path, "add", "-A"); await git(path, "commit", "-m", message); return true; }
 
+async function resumeInterrupted(run) {
+  try{
+    const working=[run.integrationPath,run.primaryPath,run.partnerPath].find(path=>path&&existsSync(path));
+    if(!working)throw new Error("The saved worktree folder is no longer available. The messages and technical history are still preserved.");
+    run.status="running";run.recoverable=false;run.cancelled=false;run.failedAgent=null;run.failureReason=null;run.pendingTakeover=null;run.error=null;run.agreement=false;
+    emit(run,"Relay","Resuming preserved session from its last durable checkpoint","handoff");persist(run,true);
+    const siblingPaths=[run.primaryPath,run.partnerPath,run.integrationPath].filter((path,index,list)=>path&&path!==working&&existsSync(path)&&list.indexOf(path)===index);
+    const context=await recoveryContext("primary",working,run);
+    const recoveryPrompt=`Recover this interrupted Agent Relay session without restarting or discarding valid work.
+ORIGINAL GOAL:
+${run.goal}
+ACTIVE WORKTREE:
+${working}
+OTHER PRESERVED WORKTREES:
+${siblingPaths.join("\n")||"none"}
+Inspect every preserved worktree and its Git history/status. Reconcile any valid committed or uncommitted work into the active worktree, resolve conflicts carefully, finish the original goal, run focused tests, and leave the active worktree in a coherent committed state. Do not touch main and do not push.${context}`;
+    await callWithBackup("primary",recoveryPrompt,working,true,run);
+    await commitIfNeeded(working,`Agent Relay: resume interrupted run ${run.id}`);
+    run.integrationPath=working;run.integrationBranch=await git(working,"branch","--show-current");
+    for(let round=1;round<=run.maxRounds;round++){
+      run.round=round;emit(run,"Relay",`Running recovered-session verification round ${round}`,"live");
+      const test=await exec("/bin/bash",["-lc",run.testCommand],working,20*60_000,run,line=>emit(run,"Tests",line,"live")).catch(error=>({out:"",err:error.message,failed:true}));
+      run.transcript[`recoveryTests${round}`]=`${test.out}\n${test.err}`;
+      const prompt=`Audit the recovered implementation for this goal: ${run.goal}\nTest result:\n${run.transcript[`recoveryTests${round}`]}\nInspect all current changes and history. Do not edit. End with exactly VERDICT: APPROVE or VERDICT: REVISE, followed by concrete issues.`;
+      const [primaryReview,partnerReview]=await Promise.all([callWithBackup("primary",prompt,working,false,run),callWithBackup("partner",prompt,working,false,run)]);
+      run.transcript[`recoveryPrimaryReview${round}`]=primaryReview;run.transcript[`recoveryPartnerReview${round}`]=partnerReview;
+      const approved=!test.failed&&/VERDICT:\s*APPROVE/i.test(primaryReview)&&/VERDICT:\s*APPROVE/i.test(partnerReview);
+      emit(run,run.roles.primary,/VERDICT:\s*APPROVE/i.test(primaryReview)?"Approved recovered result":"Requested recovery revisions");
+      emit(run,run.roles.partner,/VERDICT:\s*APPROVE/i.test(partnerReview)?"Approved recovered result":"Requested recovery revisions");
+      if(approved){run.agreement=true;break;}
+      if(round===run.maxRounds)break;
+      await callWithBackup("primary",`Repair the recovered worktree using both reviews.\nGOAL:\n${run.goal}\nPRIMARY REVIEW:\n${primaryReview}\nPARTNER REVIEW:\n${partnerReview}\nTEST OUTPUT:\n${run.transcript[`recoveryTests${round}`]}\nPreserve valid existing work and make only necessary fixes.`,working,true,run);
+      await commitIfNeeded(working,`Agent Relay: recovered repair round ${round}`);
+    }
+    if(!run.agreement)throw new Error("The recovered session did not pass both reviews. Its branch and full history remain preserved.");
+    run.status="completed";emit(run,"Relay",`Recovered session completed; ${run.integrationBranch} is ready`);persist(run,true);
+  }catch(error){run.status=run.cancelled?"stopped":"failed";run.error=run.cancelled?"Run stopped safely.":(error.friendlyMessage||simpleError(error.message));run.recoverable=Boolean([run.integrationPath,run.primaryPath,run.partnerPath].some(path=>path&&existsSync(path)));emit(run,"Relay",run.error,run.cancelled?"stopped":"error");persist(run,true);}
+}
+
 async function coordinate(run) {
   let tempRoot;
   try {
@@ -107,9 +156,9 @@ async function coordinate(run) {
     for(const id of new Set([run.primaryAgent,run.partnerAgent,run.backupAgent].filter(Boolean))){const c=findConnection(id);if(!c)throw new Error(`Unknown connection: ${id}`);await exec(c.command,c.provider==="Custom"?(c.versionArgs||[]):["--version"],repo,15_000,undefined,undefined,connectionEnv(c));}
     if (await git(repo, "status", "--porcelain")) throw new Error("The main checkout has uncommitted changes. Commit or stash them first.");
     const base = await git(repo, "branch", "--show-current"); const baseSha = await git(repo, "rev-parse", "HEAD"); run.base = base; run.baseSha = baseSha;
-    tempRoot = await mkdtemp(join(tmpdir(), `agent-relay-${run.id}-`));
+    tempRoot = await mkdtemp(join(tmpdir(), `agent-relay-${run.id}-`));run.tempRoot=tempRoot;
     run.handoffFiles={primary:join(tempRoot,"primary-handoff.md"),partner:join(tempRoot,"partner-handoff.md")};
-    const primaryPath = await makeWorktree(repo, tempRoot, `${run.id}-primary`, baseSha); const partnerPath = await makeWorktree(repo, tempRoot, `${run.id}-partner`, baseSha);
+    const primaryPath = await makeWorktree(repo, tempRoot, `${run.id}-primary`, baseSha); const partnerPath = await makeWorktree(repo, tempRoot, `${run.id}-partner`, baseSha);run.primaryPath=primaryPath;run.partnerPath=partnerPath;persist(run,true);
     emit(run, "Relay", `Created isolated ${run.primaryAgent} and ${run.partnerAgent} worktrees`); emit(run, run.primaryAgent, "Independent architecture assessment started", "live"); emit(run, run.partnerAgent, "Independent risk and test assessment started", "live");
     const checkpointRule=(role)=>`Maintain a durable handoff at ${run.handoffFiles[role]}. After each coherent milestone, overwrite it with: objective, decisions, files inspected/changed, commands and results, remaining work, risks, and the exact next action. If context feels crowded or service limits approach, finish the smallest safe checkpoint, update this handoff, and stop cleanly.`;
     const brief = role => `Goal: ${run.goal}\nInspect the repository independently. Do not edit project files. Identify concrete tasks, risks, tests, and likely file ownership. Return a concise handoff for a supervisor.\n${checkpointRule(role)}`;
@@ -124,7 +173,7 @@ async function coordinate(run) {
     run.transcript.primaryImplementation=pi;run.transcript.partnerImplementation=si;
     const pc=await commitIfNeeded(primaryPath,`Agent Relay: primary implementation ${run.id}`);const sc=await commitIfNeeded(partnerPath,`Agent Relay: partner implementation ${run.id}`);
     emit(run,run.roles.primary,pc?"Changes committed to isolated branch":"No changes required");emit(run,run.roles.partner,sc?"Changes committed to isolated branch":"No changes required");
-    const integration = join(tempRoot, `${run.id}-integration`); await git(repo, "worktree", "add", "-b", `relay/${run.id}-integration`, integration, baseSha); run.integrationBranch = `relay/${run.id}-integration`;
+    const integration = join(tempRoot, `${run.id}-integration`); await git(repo, "worktree", "add", "-b", `relay/${run.id}-integration`, integration, baseSha); run.integrationBranch = `relay/${run.id}-integration`;run.integrationPath=integration;persist(run,true);
     if(pc)await git(integration,"merge","--no-edit",`relay/${run.id}-primary`);if(sc)await git(integration,"merge","--no-edit",`relay/${run.id}-partner`);
     emit(run, "Relay", "Both implementations combined on the integration branch");
     for (let round = 1; round <= run.maxRounds; round++) {
@@ -144,8 +193,8 @@ async function coordinate(run) {
     emit(run, "Relay", "Both agents approved and tests passed");
     if (run.mergeMain) { if (await git(repo, "status", "--porcelain")) throw new Error("Main changed during the run; refusing automatic merge."); await git(repo, "merge", "--no-ff", run.integrationBranch, "-m", `Merge ${run.integrationBranch}`); emit(run, "Relay", `Merged safely into ${base}`); }
     run.status = "completed"; emit(run, "Relay", run.mergeMain ? "Team run completed and merged" : `Team run completed; ${run.integrationBranch} is ready`);
-  } catch (error) { run.status = run.cancelled ? "stopped" : "failed"; run.error = run.cancelled ? "Run stopped safely." : (error.friendlyMessage||simpleError(error.message)); emit(run, "Relay", run.error, run.cancelled ? "stopped" : "error"); }
-  finally { if (tempRoot) { /* worktrees remain registered for inspection; cleanup is explicit */ } }
+  } catch (error) { run.status = run.cancelled ? "stopped" : "failed"; run.error = run.cancelled ? "Run stopped safely." : (error.friendlyMessage||simpleError(error.message)); run.recoverable=Boolean([run.integrationPath,run.primaryPath,run.partnerPath].some(path=>path&&existsSync(path)));emit(run, "Relay", run.error, run.cancelled ? "stopped" : "error"); }
+  finally { persist(run,true);if (tempRoot) { /* worktrees remain registered for inspection; cleanup is explicit */ } }
 }
 
 function json(res, code, body) { res.writeHead(code, { "content-type": "application/json", "access-control-allow-origin": "*" }); res.end(JSON.stringify(body)); }
@@ -154,7 +203,9 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/api/settings") return json(res,200,publicConfig());
   if (req.method === "PUT" && req.url === "/api/settings") { let body=""; for await(const c of req)body+=c; try{return json(res,200,saveConfig(JSON.parse(body)));}catch(error){return json(res,400,{error:error.message});} }
   if (req.method === "GET" && req.url === "/api/health") { const items=publicConfig().connections;const checks={};for(const c of items)checks[c.id]=await exec(c.command,c.provider==="Custom"?(c.versionArgs||[]):["--version"],process.cwd(),5_000,undefined,undefined,connectionEnv(c)).then(()=>true).catch(()=>false);return json(res,200,{connections:checks,claude:checks.Claude,codex:checks.Codex,copilot:checks.Copilot,gemini:checks.Gemini}); }
-  if (req.method === "POST" && req.url === "/api/runs") { let body=""; for await (const c of req) body+=c; try { const input=JSON.parse(body);const primary=input.primaryAgent||"Claude",partner=input.partnerAgent||"Codex",backup=input.backupAgent||null;if(primary===partner)throw new Error("Primary and partner must be different agents.");const run={id:randomUUID().slice(0,8),repoPath:input.repoPath,goal:input.goal,primaryAgent:primary,partnerAgent:partner,backupAgent:backup,autoFailover:Boolean(input.autoFailover),roles:{primary,partner},failedAgents:[],maxRounds:Math.min(4,Math.max(1,Number(input.maxRounds)||3)),testCommand:input.testCommand||"npm test",mergeMain:Boolean(input.mergeMain),status:"queued",events:[],messages:[],activity:{Relay:"Starting",Claude:"Waiting",Codex:"Waiting",Copilot:"Waiting",Gemini:"Waiting",Tests:"Idle"},connected:{claude:false,codex:false,copilot:false,gemini:false},live:{claude:"",codex:"",copilot:"",gemini:""},transcript:{},children:new Set(),cancelled:false,createdAt:new Date().toISOString()}; runs.set(run.id,run); coordinate(run); return json(res,202,{...run,children:undefined}); } catch(e){return json(res,400,{error:e.message});} }
+  if(req.method==="GET"&&req.url==="/api/runs")return json(res,200,[...runs.values()].sort((a,b)=>String(b.updatedAt||b.createdAt).localeCompare(String(a.updatedAt||a.createdAt))).map(run=>({id:run.id,status:run.status,goal:run.goal,repoPath:run.repoPath,createdAt:run.createdAt,updatedAt:run.updatedAt,recoverable:Boolean(run.recoverable),integrationBranch:run.integrationBranch,error:run.error})));
+  if (req.method === "POST" && req.url === "/api/runs") { let body=""; for await (const c of req) body+=c; try { const input=JSON.parse(body);const primary=input.primaryAgent||"Claude",partner=input.partnerAgent||"Codex",backup=input.backupAgent||null;if(primary===partner)throw new Error("Primary and partner must be different agents.");const run={id:randomUUID().slice(0,8),repoPath:input.repoPath,goal:input.goal,primaryAgent:primary,partnerAgent:partner,backupAgent:backup,autoFailover:Boolean(input.autoFailover),roles:{primary,partner},failedAgents:[],maxRounds:Math.min(4,Math.max(1,Number(input.maxRounds)||3)),testCommand:input.testCommand||"npm test",mergeMain:Boolean(input.mergeMain),status:"queued",events:[],messages:[],activity:{Relay:"Starting",Claude:"Waiting",Codex:"Waiting",Copilot:"Waiting",Gemini:"Waiting",Tests:"Idle"},connected:{claude:false,codex:false,copilot:false,gemini:false},live:{claude:"",codex:"",copilot:"",gemini:""},transcript:{},children:new Set(),cancelled:false,createdAt:new Date().toISOString()}; runs.set(run.id,run);persist(run,true);coordinate(run); return json(res,202,{...run,children:undefined}); } catch(e){return json(res,400,{error:e.message});} }
+  const resume=req.url?.match(/^\/api\/runs\/([\w-]+)\/resume$/);if(req.method==="POST"&&resume){const run=runs.get(resume[1]);if(!run)return json(res,404,{error:"Run not found"});if(["running","queued","needs_attention"].includes(run.status))return json(res,409,{error:"This session is already active."});let body="";for await(const c of req)body+=c;try{const input=body?JSON.parse(body):{};const primary=input.primaryAgent||run.roles?.primary||run.primaryAgent,partner=input.partnerAgent||run.roles?.partner||run.partnerAgent;if(primary===partner)throw new Error("Choose two different agents.");if(!findConnection(primary)||!findConnection(partner))throw new Error("Choose valid agent connections.");run.roles={primary,partner};run.primaryAgent=primary;run.partnerAgent=partner;run.backupAgent=input.backupAgent??run.backupAgent;run.autoFailover=Boolean(input.autoFailover);resumeInterrupted(run);return json(res,202,{status:"resuming",id:run.id});}catch(error){return json(res,400,{error:error.message});}}
   const takeover=req.url?.match(/^\/api\/runs\/([\w-]+)\/takeover$/);if(req.method==="POST"&&takeover){const run=runs.get(takeover[1]);if(!run)return json(res,404,{error:"Run not found"});if(!run.takeoverResolver)return json(res,409,{error:"This run is not waiting for a replacement."});let body="";for await(const c of req)body+=c;try{const replacement=JSON.parse(body).replacement;if(!findConnection(replacement))throw new Error("Choose a valid connection.");run.takeoverResolver(replacement);return json(res,202,{status:"resuming",replacement,retry:replacement===run.pendingTakeover?.failed});}catch(error){return json(res,400,{error:error.message});}}
   const stop=req.url?.match(/^\/api\/runs\/([\w-]+)\/stop$/); if(req.method==="POST"&&stop){const run=runs.get(stop[1]);if(!run)return json(res,404,{error:"Run not found"});run.cancelled=true;run.status="stopping";emit(run,"Relay","Stopping active agents and tests","live");if(run.takeoverRejecter)run.takeoverRejecter(new Error("Run stopped by user."));for(const pid of run.children){try{process.kill(-pid,"SIGTERM")}catch{}}return json(res,202,{status:"stopping"});}
   const m=req.url?.match(/^\/api\/runs\/([\w-]+)$/); if(req.method==="GET"&&m) return runs.has(m[1])?json(res,200,runs.get(m[1])):json(res,404,{error:"Run not found"});
