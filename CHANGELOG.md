@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.0
+
+- Added mandatory human-readable plan review before implementation.
+- Added in-app plan approval and revision directions.
+- Added live Interrupt & Steer with checkpoint-preserving continuation.
+- Added evidence-based disagreement rules and bounded decision authority.
+- Added a beginner setup assistant for Node, Git, and model CLIs.
+
 ## 2.1.0
 
 - Added durable run-state persistence outside project repositories.

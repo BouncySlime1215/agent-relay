@@ -25,7 +25,7 @@ export function loadRunStates() {
   return readdirSync(stateRoot).filter(name=>name.endsWith(".json")).flatMap(name=>{
     try{
       const run=JSON.parse(readFileSync(join(stateRoot,name),"utf8"));
-      if(["running","queued","stopping","needs_attention"].includes(run.status)){
+      if(["running","queued","stopping","needs_attention","awaiting_plan","steering"].includes(run.status)){
         run.status="interrupted";
         run.error="Agent Relay restarted. All saved history and worktrees were preserved.";
         run.recoverable=true;

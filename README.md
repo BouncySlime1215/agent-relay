@@ -4,6 +4,24 @@ Agent Relay is a local, provider-neutral coordinator for coding agents. Give it 
 
 Built-in adapters support Claude Code, OpenAI Codex, and GitHub Copilot CLI. Named account connections and custom command adapters let every contributor use their own accounts and models without sharing credentials.
 
+## Easiest Mac setup
+
+You do not need to understand Git or Terminal commands.
+
+1. Click the green **Code** button near the top of this GitHub page.
+2. Click **Download ZIP**.
+3. Open your Downloads folder and double-click the ZIP.
+4. Open the new `agent-relay` folder.
+5. Double-click **`setup-agent-relay.command`**.
+6. The setup window checks Git and Node.js, then asks before installing any missing AI tools. You only need two working agents.
+7. Run each chosen agent once in Terminal and complete its normal sign-in screen.
+8. Double-click **`start-agent-relay.command`**.
+9. Your browser opens Agent Relay automatically.
+
+If macOS blocks a `.command` file, right-click it, choose **Open**, and then choose **Open** again. The setup assistant never stores passwords or model tokens.
+
+Supported installers use the providers' official packages: [Claude Code](https://docs.anthropic.com/en/docs/claude-code/setup), [OpenAI Codex](https://developers.openai.com/codex/cli), [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/set-up/install-copilot-cli), and [Gemini CLI](https://github.com/google-gemini/gemini-cli).
+
 ## Highlights
 
 - Primary, partner, and optional backup roles.
@@ -13,6 +31,8 @@ Built-in adapters support Claude Code, OpenAI Codex, and GitHub Copilot CLI. Nam
 - Durable handoff checkpoints for context or rate-limit interruptions.
 - Crash-safe session history across browser, app, and Mac restarts.
 - Manual in-app takeover by default; optional automatic backup.
+- A readable plan that requires your approval before agents edit code.
+- Live Interrupt & Steer that preserves work before changing direction.
 - Same-worktree continuation with Git status and diff recovery.
 - Isolated implementation branches and a separate integration branch.
 - Tests and two explicit approvals before the merge gate opens.
@@ -38,6 +58,12 @@ On macOS, double-click `start-agent-relay.command`. The dashboard opens at `http
 2. Select the primary, partner, and optional backup.
 3. Leave **Automatically use backup without asking** off if you want to choose every takeover yourself.
 4. Choose a clean local Git repository, enter a goal and test command, then start the team.
+5. Read the proposed plan. Approve it or tell Relay exactly what to change.
+6. Use **Interrupt & steer** at any time if the agents head in the wrong direction.
+
+## How disagreements are handled
+
+Agents must tie blocking objections to code, tests, security, data-loss risk, or an unmet requirement. They cannot keep repeating an issue that was fixed or answered. Reversible implementation preferences belong to the primary lead. Relay only keeps a disagreement blocking when there is concrete evidence of a serious unresolved problem, and review rounds remain bounded by your selected limit.
 
 ## Multiple accounts and collaborators
 
