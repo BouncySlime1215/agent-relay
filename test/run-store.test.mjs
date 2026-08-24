@@ -15,4 +15,7 @@ test("run history survives restart and marks active work recoverable",async()=>{
   assert.equal(loaded.recoverable,true);
   assert.equal(loaded.events[0].text,"Saved");
   assert.equal(loaded.children.size,0);
+  assert.equal(loaded.primaryObjective,"Keep everything");
+  assert.equal(loaded.secondaryObjectives[0].source,"restart");
+  assert.deepEqual(loaded.steeringNotes,[]);
 });

@@ -25,7 +25,11 @@ export function loadRunStates() {
   return readdirSync(stateRoot).filter(name=>name.endsWith(".json")).flatMap(name=>{
     try{
       const run=JSON.parse(readFileSync(join(stateRoot,name),"utf8"));
+      run.primaryObjective=run.primaryObjective||run.goal||"";
+      run.secondaryObjectives=Array.isArray(run.secondaryObjectives)?run.secondaryObjectives:[];
+      run.steeringNotes=Array.isArray(run.steeringNotes)?run.steeringNotes:[];
       if(["running","queued","stopping","needs_attention","awaiting_plan","steering"].includes(run.status)){
+        if(run.secondaryObjectives.at(-1)?.source!=="restart")run.secondaryObjectives.push({id:`restart-${Date.now()}`,text:"Resume preserved work after Agent Relay restart",source:"restart",at:new Date().toISOString()});
         run.status="interrupted";
         run.error="Agent Relay restarted. All saved history and worktrees were preserved.";
         run.recoverable=true;

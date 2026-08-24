@@ -30,6 +30,7 @@ Supported installers use the providers' official packages: [Claude Code](https:/
 - Custom non-interactive CLI adapters.
 - Durable handoff checkpoints for context or rate-limit interruptions.
 - Crash-safe session history across browser, app, and Mac restarts.
+- A saved Primary → Secondary → Steer objective history for every session.
 - Manual in-app takeover by default; optional automatic backup.
 - A readable plan that requires your approval before agents edit code.
 - Live Interrupt & Steer that preserves work before changing direction.
@@ -60,6 +61,16 @@ On macOS, double-click `start-agent-relay.command`. The dashboard opens at `http
 4. Choose a clean local Git repository, enter a goal and test command, then start the team.
 5. Read the proposed plan. Approve it or tell Relay exactly what to change.
 6. Use **Interrupt & steer** at any time if the agents head in the wrong direction.
+
+## Objective history
+
+Every session keeps three simple layers together in one smooth timeline:
+
+- **Primary objective** — the original outcome you want the team to build. It never gets silently replaced.
+- **Secondary objectives** — follow-up phases, failures to recover from, support tasks, and “continue from here” instructions. Add these without restarting the team.
+- **Steering notes** — live interruptions and small corrections. Relay stops active processes safely, records the direction, and resumes from preserved work.
+
+All three layers survive browser, Relay, and Mac restarts. They are included in agent assessments, implementation prompts, recovery handoffs, and reviews so a replacement model knows both the original intent and everything that changed afterward.
 
 ## How disagreements are handled
 

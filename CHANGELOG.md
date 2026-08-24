@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.3.0
+
+- Added persistent Primary, Secondary, and Steer objective layers.
+- Added an in-app objective history board and secondary-objective composer.
+- Included objective history in planning, implementation, takeover, recovery, and review prompts.
+- Recorded model failures and restarts as recovery objectives automatically.
+
 ## 2.2.0
 
 - Added mandatory human-readable plan review before implementation.
