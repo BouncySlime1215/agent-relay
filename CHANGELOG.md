@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.4.0
+
+- Replaced roadmap-wide approval with a frozen, bounded phase gate.
+- Added Approved with Follow-ups so future improvements no longer fail completed phases.
+- Added a persistent finding ledger that tracks open and verified blockers across review rounds.
+- Added per-connection estimated token tracking and compact prompt contexts.
+- Made Relay's authoritative test run override reviewer-sandbox execution limitations.
+- Added parsing for clean structured reviews and raw Codex JSONL custom adapters.
+- Preserved backward compatibility for all existing saved sessions and worktree history.
+
 ## 2.3.0
 
 - Added persistent Primary, Secondary, and Steer objective layers.

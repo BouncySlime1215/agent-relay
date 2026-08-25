@@ -31,6 +31,9 @@ Supported installers use the providers' official packages: [Claude Code](https:/
 - Durable handoff checkpoints for context or rate-limit interruptions.
 - Crash-safe session history across browser, app, and Mac restarts.
 - A saved Primary → Secondary → Steer objective history for every session.
+- Frozen phase gates with Approved, Approved with Follow-ups, and Blocked outcomes.
+- A persistent finding ledger that prevents resolved issues from silently becoming open again.
+- Per-agent estimated token tracking and bounded prompts to reduce unnecessary usage.
 - Manual in-app takeover by default; optional automatic backup.
 - A readable plan that requires your approval before agents edit code.
 - Live Interrupt & Steer that preserves work before changing direction.
@@ -74,7 +77,13 @@ All three layers survive browser, Relay, and Mac restarts. They are included in 
 
 ## How disagreements are handled
 
-Agents must tie blocking objections to code, tests, security, data-loss risk, or an unmet requirement. They cannot keep repeating an issue that was fixed or answered. Reversible implementation preferences belong to the primary lead. Relay only keeps a disagreement blocking when there is concrete evidence of a serious unresolved problem, and review rounds remain bounded by your selected limit.
+The primary objective is a roadmap. Each run proposes one bounded phase, and approving its plan freezes the acceptance criteria for that phase. Reviewers cannot fail a phase because unrelated roadmap work remains. Agents must tie blockers to code, authoritative tests, security, data-loss risk, destructive migration, or an unmet frozen criterion. Reversible preferences and worthwhile future work become saved follow-up objectives. Relay keeps a persistent finding ledger, and a resolved finding needs new evidence before it can block again.
+
+Relay runs the configured test command outside model sandboxes. A reviewer's inability to execute a command inside its own sandbox is recorded but does not override Relay's authoritative result.
+
+## Token tracking
+
+The dashboard estimates input and output tokens for each local agent connection and shows total calls. Estimates use character counts because native CLIs do not expose one consistent usage format. Full objectives and history remain saved, while repeated implementation, repair, and review prompts use the approved phase and recent context instead of resending the complete roadmap every turn.
 
 ## Multiple accounts and collaborators
 
