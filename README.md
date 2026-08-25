@@ -105,14 +105,15 @@ No provider exposes a universal reliable “tokens remaining” API, so checkpoi
 
 ## Restart and crash recovery
 
-Relay continuously saves run goals, readable messages, technical events, test history, model assignments, checkpoint paths, branches, and worktree locations under `~/.agent-relay/runs`. If the browser, Relay process, or Mac restarts, the dashboard restores the active session automatically and shows **Interrupted session preserved**. Choose **Open** to inspect everything or **Resume work** to continue from the saved worktrees. Recovery never silently edits or merges main.
+Relay continuously saves run goals, readable messages, technical events, test history, model assignments, checkpoint paths, branches, and worktree locations under `~/.agent-relay/runs`. If the browser, Relay process, or Mac restarts, the dashboard restores the active session automatically and shows **Interrupted session preserved**. Choose **Open** to inspect everything or **Resume work** to continue from the saved worktrees. Recovery preserves the same publish settings as the original run.
 
 ## Safety
 
 - The selected repository must be clean before a run.
 - Agents cannot edit main directly through Relay.
-- Automatic merge is disabled by default.
-- Relay never pushes automatically.
+- Approved integration branches publish automatically to the repository's configured `origin` remote.
+- Automatic main-branch merge remains disabled by default. Enable **Merge and push main when green** to opt in for a run.
+- Before merging, Relay fetches the remote base branch and refuses to continue if the checkout is dirty, on another branch, or behind the remote.
 - Custom adapters execute local programs and should be treated as trusted code.
 - Provider usage limits and charges remain controlled by each native CLI.
 
