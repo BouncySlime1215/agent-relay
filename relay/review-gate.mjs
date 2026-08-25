@@ -56,6 +56,20 @@ export function parseReview(text){
   return {verdict:"REVISE",blockers:tail?[{id:"legacy-review",criterion:"Approved phase",evidence:compact(tail,5000)}]:[{id:"missing-verdict",criterion:"Review format",evidence:"Reviewer did not provide an actionable approval verdict."}],followups:[],raw};
 }
 
+const NON_BLOCKING_METADATA=/commit(?:-| )message|git metadata|cannot lock (?:ref|index)|index\.lock|operation not permitted|read[- ]only|workspace permission|sandbox|commit signing|gpg|branch name|tag name/i;
+
+export function applyAuthoritativeGate(review,{testsPassed=false}={}){
+  if(!testsPassed)return review;
+  const blockers=[],followups=[...(review.followups||[])];
+  for(const blocker of review.blockers||[]){
+    const evidence=`${blocker.id||""} ${blocker.criterion||""} ${blocker.evidence||""}`;
+    if(NON_BLOCKING_METADATA.test(evidence))followups.push(`Non-blocking environment or repository-metadata item: ${blocker.evidence}`);
+    else blockers.push(blocker);
+  }
+  const verdict=blockers.length?"REVISE":followups.length?"FOLLOWUPS":"APPROVE";
+  return {...review,verdict,blockers,followups};
+}
+
 function findingKey(item){return clean(item.id,80)!=="legacy-review"?clean(item.id,80):clean(item.evidence,180).toLowerCase().replace(/[^a-z0-9]+/g,"-").slice(0,72);}
 
 export function recordReviewRound(run,reviews,round){
@@ -67,10 +81,10 @@ export function recordReviewRound(run,reviews,round){
     if(!finding){finding={key,id:blocker.id,criterion:blocker.criterion,evidence:blocker.evidence,status:"open",firstRound:round,lastRound:round,agents:[agent]};run.findingLedger.push(finding);}
     else{finding.status="open";finding.lastRound=round;finding.evidence=blocker.evidence;if(!finding.agents.includes(agent))finding.agents.push(agent);}
   }
-  for(const finding of run.findingLedger)if(finding.status==="open"&&!activeKeys.has(finding.key)&&finding.lastRound<round)finding.status="verified";
+  for(const finding of run.findingLedger)if(finding.status==="open"&&!activeKeys.has(finding.key))finding.status="verified";
   return run.findingLedger.filter(item=>item.status==="open");
 }
 
 export function reviewPrompt(run,{baseSha,testOutput,round,recovered=false}={}){
-  return `Perform a concise ${recovered?"recovered ":""}phase-gate review. Do not edit files.\n${phaseContext(run)}\nAUTHORITATIVE RELAY TEST RESULT:\n${compact(testOutput,5000)}\nInspect the current diff${baseSha?` from ${baseSha}`:" and history"}. Review ONLY the approved phase and its frozen acceptance criteria. The larger primary objective is a roadmap, not this phase's gate. Relay's test result overrides a model sandbox's inability to execute a command. Do not repeat a resolved finding without new code or test evidence. Reversible preferences and future enhancements are follow-ups, not blockers. Only a demonstrated security vulnerability, data-loss/destructive-migration risk, unmet frozen acceptance criterion, or failing authoritative test may block. Keep the response under 700 words. Return ONLY JSON:\n{"verdict":"APPROVE|APPROVE_WITH_FOLLOWUPS|REVISE","blockers":[{"id":"stable-short-id","criterion":"number or name","evidence":"file/test/command evidence"}],"followups":["non-blocking future work"]}\nRound: ${round}.`;
+  return `Perform a concise ${recovered?"recovered ":""}phase-gate review. Do not edit files.\n${phaseContext(run)}\nAUTHORITATIVE RELAY TEST RESULT:\n${compact(testOutput,5000)}\nInspect the current diff${baseSha?` from ${baseSha}`:" and history"}. Review ONLY the approved phase and its frozen acceptance criteria. The larger primary objective is a roadmap, not this phase's gate. Relay's test result overrides a model sandbox's inability to execute a command. Read-only Git metadata, inability to rewrite commits, commit-message quality, signing, branch naming, and other environment limitations are always FOLLOW-UPS, never blockers. Do not repeat a resolved finding without new code or test evidence. Reversible preferences and future enhancements are follow-ups, not blockers. Only a demonstrated security vulnerability, data-loss/destructive-migration risk, behaviorally unmet frozen acceptance criterion, or failing authoritative test may block. Keep the response under 700 words. Return ONLY JSON:\n{"verdict":"APPROVE|APPROVE_WITH_FOLLOWUPS|REVISE","blockers":[{"id":"stable-short-id","criterion":"number or name","evidence":"file/test/command evidence"}],"followups":["non-blocking future work"]}\nRound: ${round}.`;
 }

@@ -1,6 +1,6 @@
 {
   "name": "agent-relay",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "description": "Local multi-agent coding coordinator for Claude Code, Codex, GitHub Copilot, and custom CLI models.",
   "type": "module",
   "private": false,

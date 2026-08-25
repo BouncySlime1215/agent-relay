@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { compactObjectiveContext, parseReview, recordReviewRound, recordTokenEstimate } from "../relay/review-gate.mjs";
+import { applyAuthoritativeGate, compactObjectiveContext, parseReview, recordReviewRound, recordTokenEstimate } from "../relay/review-gate.mjs";
 
 test("structured phase review distinguishes blockers from follow-ups",()=>{
   const approved=parseReview(JSON.stringify({verdict:"APPROVE_WITH_FOLLOWUPS",blockers:[],followups:["Add a chart later"]}));
@@ -21,6 +21,25 @@ test("finding ledger verifies findings absent from the next round",()=>{
   recordReviewRound(run,[{agent:"Codex",review:{blockers:[{id:"auth-1",criterion:"Authorization",evidence:"failure"}]}}],1);
   assert.equal(run.findingLedger[0].status,"open");
   recordReviewRound(run,[{agent:"Codex",review:{blockers:[]}}],2);
+  assert.equal(run.findingLedger[0].status,"verified");
+});
+
+test("passing authoritative tests downgrade read-only Git metadata to follow-up",()=>{
+  const review=parseReview(JSON.stringify({verdict:"REVISE",blockers:[{id:"commit-evidence",criterion:"9",evidence:"Cannot rewrite commit messages because Git metadata is read-only: cannot lock ref, Operation not permitted"}],followups:[]}));
+  const gated=applyAuthoritativeGate(review,{testsPassed:true});
+  assert.equal(gated.verdict,"FOLLOWUPS");
+  assert.equal(gated.blockers.length,0);
+  assert.equal(gated.followups.length,1);
+});
+
+test("Git metadata remains blocking when authoritative tests fail",()=>{
+  const review=parseReview(JSON.stringify({verdict:"REVISE",blockers:[{id:"commit-evidence",criterion:"9",evidence:"Git metadata is read-only"}],followups:[]}));
+  assert.equal(applyAuthoritativeGate(review,{testsPassed:false}).verdict,"REVISE");
+});
+
+test("old open findings verify when a recovered round restarts numbering",()=>{
+  const run={findingLedger:[{key:"old",id:"old",status:"open",lastRound:4,agents:["Codex"]}]};
+  recordReviewRound(run,[{agent:"Codex",review:{blockers:[]}}],1);
   assert.equal(run.findingLedger[0].status,"verified");
 });
 

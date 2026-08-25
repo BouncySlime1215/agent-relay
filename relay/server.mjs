@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { connectionEnv, findConnection, publicConfig, saveConfig } from "./config.mjs";
 import { loadRunStates, saveRunState } from "./run-store.mjs";
-import { compactObjectiveContext, parseReview, phaseContext, recordReviewRound, recordTokenEstimate, reviewPrompt as buildReviewPrompt } from "./review-gate.mjs";
+import { applyAuthoritativeGate, compactObjectiveContext, parseReview, phaseContext, recordReviewRound, recordTokenEstimate, reviewPrompt as buildReviewPrompt } from "./review-gate.mjs";
 
 const PORT = 4317;
 const runs = new Map();
@@ -159,7 +159,7 @@ Inspect every preserved worktree and its Git history/status. Reconcile valid com
       run.lastTestPassed=!test.failed;const prompt=buildReviewPrompt(run,{testOutput:run.transcript[`recoveryTests${round}`],round,recovered:true});
       const [primaryReview,partnerReview]=await Promise.all([callWithBackup("primary",prompt,working,false,run),callWithBackup("partner",prompt,working,false,run)]);
       run.transcript[`recoveryPrimaryReview${round}`]=primaryReview;run.transcript[`recoveryPartnerReview${round}`]=partnerReview;
-      const primaryResult=parseReview(primaryReview),partnerResult=parseReview(partnerReview),openFindings=recordReviewRound(run,[{agent:run.roles.primary,review:primaryResult},{agent:run.roles.partner,review:partnerResult}],round);
+      const primaryResult=applyAuthoritativeGate(parseReview(primaryReview),{testsPassed:!test.failed}),partnerResult=applyAuthoritativeGate(parseReview(partnerReview),{testsPassed:!test.failed}),openFindings=recordReviewRound(run,[{agent:run.roles.primary,review:primaryResult},{agent:run.roles.partner,review:partnerResult}],round);
       emit(run,run.roles.primary,reviewSummary(primaryResult));emit(run,run.roles.partner,reviewSummary(partnerResult));
       const approved=!test.failed&&reviewAccepted(primaryResult)&&reviewAccepted(partnerResult)&&openFindings.length===0;
       if(approved){run.agreement=true;captureFollowups(run,[primaryResult,partnerResult]);run.phaseOutcome=[primaryResult.verdict,partnerResult.verdict].includes("FOLLOWUPS")?"approved_with_followups":"approved";break;}
@@ -205,7 +205,7 @@ async function coordinate(run) {
       const test = await exec("/bin/bash", ["-lc", run.testCommand], integration, 20 * 60_000, run, line => emit(run,"Tests",line,"live")).catch(e => ({ out: "", err: e.message, failed: true })); run.transcript[`tests${round}`] = `${test.out}\n${test.err}`;run.lastTestPassed=!test.failed;
       const reviewPrompt = buildReviewPrompt(run,{baseSha,testOutput:run.transcript[`tests${round}`],round});
       const [pr,sr]=await Promise.all([callWithBackup("primary",reviewPrompt,integration,false,run),callWithBackup("partner",reviewPrompt,integration,false,run)]);run.transcript[`primaryReview${round}`]=pr;run.transcript[`partnerReview${round}`]=sr;
-      const primaryResult=parseReview(pr),partnerResult=parseReview(sr),openFindings=recordReviewRound(run,[{agent:run.roles.primary,review:primaryResult},{agent:run.roles.partner,review:partnerResult}],round);
+      const primaryResult=applyAuthoritativeGate(parseReview(pr),{testsPassed:!test.failed}),partnerResult=applyAuthoritativeGate(parseReview(sr),{testsPassed:!test.failed}),openFindings=recordReviewRound(run,[{agent:run.roles.primary,review:primaryResult},{agent:run.roles.partner,review:partnerResult}],round);
       emit(run,run.roles.primary,reviewSummary(primaryResult));emit(run,run.roles.partner,reviewSummary(partnerResult));
       const approved=!test.failed&&reviewAccepted(primaryResult)&&reviewAccepted(partnerResult)&&openFindings.length===0;
       if (approved) { run.agreement = true;captureFollowups(run,[primaryResult,partnerResult]);run.phaseOutcome=[primaryResult.verdict,partnerResult.verdict].includes("FOLLOWUPS")?"approved_with_followups":"approved";break; }

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.1
+
+- Downgraded read-only Git metadata, commit-message, signing, and sandbox limitations to non-blocking follow-ups when Relay's authoritative tests pass.
+- Fixed finding-ledger verification when a recovered session restarts review-round numbering.
+- Clarified reviewer instructions so repository metadata cannot trap an otherwise passing phase in a repair loop.
+
 ## 2.4.0
 
 - Replaced roadmap-wide approval with a frozen, bounded phase gate.
