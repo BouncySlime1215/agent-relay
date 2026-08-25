@@ -34,6 +34,8 @@ Supported installers use the providers' official packages: [Claude Code](https:/
 - Frozen phase gates with Approved, Approved with Follow-ups, and Blocked outcomes.
 - A persistent finding ledger that prevents resolved issues from silently becoming open again.
 - Per-agent estimated token tracking and bounded prompts to reduce unnecessary usage.
+- Separate current-build and overall-project timelines so the active phase stays connected to the larger roadmap.
+- Persistent one-click controls to completely minimize prompts and status cards.
 - Manual in-app takeover by default; optional automatic backup.
 - A readable plan that requires your approval before agents edit code.
 - Live Interrupt & Steer that preserves work before changing direction.

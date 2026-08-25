@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyAuthoritativeGate, compactObjectiveContext, parseReview, recordReviewRound, recordTokenEstimate } from "../relay/review-gate.mjs";
+import { applyAuthoritativeGate, beginTokenEstimate, compactObjectiveContext, finishTokenEstimate, parseReview, recordReviewRound, recordTokenEstimate } from "../relay/review-gate.mjs";
 
 test("structured phase review distinguishes blockers from follow-ups",()=>{
   const approved=parseReview(JSON.stringify({verdict:"APPROVE_WITH_FOLLOWUPS",blockers:[],followups:["Add a chart later"]}));
@@ -47,6 +47,16 @@ test("token estimates accumulate without storing new credentials",()=>{
   const run={};recordTokenEstimate(run,"Claude","12345678","1234");recordTokenEstimate(run,"Claude","1234","1234");
   assert.equal(run.tokenUsage.Claude.calls,2);
   assert.equal(run.tokenUsage.Claude.total,5);
+});
+
+test("token tracking records calls before completion and failed turns",()=>{
+  const run={};beginTokenEstimate(run,"Codex","12345678");
+  assert.equal(run.tokenUsage.Codex.calls,1);
+  assert.equal(run.tokenUsage.Codex.input,2);
+  finishTokenEstimate(run,"Codex","1234",{failed:true});
+  assert.equal(run.tokenUsage.Codex.output,1);
+  assert.equal(run.tokenUsage.Codex.failedCalls,1);
+  assert.equal(run.tokenTotal,3);
 });
 
 test("objective context is bounded while history remains on the run",()=>{

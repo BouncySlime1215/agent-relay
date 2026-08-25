@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.5.0
+
+- Added separate current-build and overall-project timelines.
+- Made plan generation return an ordered project roadmap alongside the bounded active phase.
+- Fixed token estimates so calls appear immediately and successful or failed outputs are counted.
+- Added per-agent input/output/call/failure totals and an all-agent total.
+- Added persistent controls to completely minimize prompts and current-status cards.
+
 ## 2.4.1
 
 - Downgraded read-only Git metadata, commit-message, signing, and sandbox limitations to non-blocking follow-ups when Relay's authoritative tests pass.

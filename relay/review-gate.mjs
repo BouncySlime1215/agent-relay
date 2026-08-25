@@ -11,6 +11,20 @@ export function recordTokenEstimate(run,agent,prompt,result){
   run.tokenTotal=Object.values(run.tokenUsage).reduce((sum,value)=>sum+(value.total||0),0);
 }
 
+export function beginTokenEstimate(run,agent,prompt){
+  run.tokenUsage=run.tokenUsage||{};
+  const item=run.tokenUsage[agent]||{input:0,output:0,total:0,calls:0,failedCalls:0,estimated:true};
+  item.input+=estimateTokens(prompt);item.calls+=1;item.total=item.input+item.output;item.estimated=true;
+  run.tokenUsage[agent]=item;run.tokenTotal=Object.values(run.tokenUsage).reduce((sum,value)=>sum+(value.total||0),0);
+}
+
+export function finishTokenEstimate(run,agent,result,{failed=false}={}){
+  run.tokenUsage=run.tokenUsage||{};
+  const item=run.tokenUsage[agent]||{input:0,output:0,total:0,calls:1,failedCalls:0,estimated:true};
+  item.output+=estimateTokens(result);if(failed)item.failedCalls=(item.failedCalls||0)+1;item.total=item.input+item.output;item.estimated=true;
+  run.tokenUsage[agent]=item;run.tokenTotal=Object.values(run.tokenUsage).reduce((sum,value)=>sum+(value.total||0),0);
+}
+
 export function compactObjectiveContext(run,{includePrimary=true}={}){
   const primary=includePrimary?compact(run.primaryObjective||run.goal||"",4200):"Saved in the session record; execute only the approved phase below.";
   const secondary=(run.secondaryObjectives||[]).slice(-6).map((item,index)=>`${index+1}. ${compact(item.text,700)}`).join("\n")||"none";

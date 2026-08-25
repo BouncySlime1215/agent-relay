@@ -32,6 +32,8 @@ export function loadRunStates() {
       run.tokenUsage=run.tokenUsage&&typeof run.tokenUsage==="object"?run.tokenUsage:{};
       run.tokenTotal=Number(run.tokenTotal)||Object.values(run.tokenUsage).reduce((sum,item)=>sum+(Number(item?.total)||0),0);
       run.phase=run.phase&&typeof run.phase==="object"?run.phase:null;
+      run.projectTimeline=Array.isArray(run.projectTimeline)?run.projectTimeline:[];
+      run.currentBuildTimeline=Array.isArray(run.currentBuildTimeline)?run.currentBuildTimeline:[];
       run.lastTestPassed=Boolean(run.lastTestPassed||run.agreement);
       if(["running","queued","stopping","needs_attention","awaiting_plan","steering"].includes(run.status)){
         if(run.secondaryObjectives.at(-1)?.source!=="restart")run.secondaryObjectives.push({id:`restart-${Date.now()}`,text:"Resume preserved work after Agent Relay restart",source:"restart",at:new Date().toISOString()});
