@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.6.0
+
+- Automatically publishes an approved integration branch to the configured `origin` remote.
+- Makes the green merge option merge the approved branch and push the selected base branch to `origin`.
+- Refuses to merge when the base checkout is dirty, moved to another branch, or behind its remote counterpart.
+- Applies the same publish and merge behavior to recovered sessions.
+
 ## 2.5.0
 
 - Added separate current-build and overall-project timelines.
